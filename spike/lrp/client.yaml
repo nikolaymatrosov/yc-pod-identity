@@ -1,0 +1,25 @@
+# Клиенты в отдельном namespace: LRP namespaced, а в проде прокси и клиенты в разных namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lrp-client
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: lrp-client
+  namespace: lrp-client
+spec:
+  selector:
+    matchLabels:
+      app: lrp-client
+  template:
+    metadata:
+      labels:
+        app: lrp-client
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: curl
+          image: curlimages/curl
+          command: ["sleep", "86400"]

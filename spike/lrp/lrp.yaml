@@ -1,0 +1,20 @@
+# Перехват 169.254.169.254:80 в бэкенд на той же ноде. redirectFrontend неизменяем: правка = удалить и создать.
+apiVersion: cilium.io/v2
+kind: CiliumLocalRedirectPolicy
+metadata:
+  name: metadata
+  namespace: lrp-spike
+spec:
+  redirectFrontend:
+    addressMatcher:
+      ip: 169.254.169.254
+      toPorts:
+        - port: "80"
+          protocol: TCP
+  redirectBackend:
+    localEndpointSelector:
+      matchLabels:
+        app: lrp-backend
+    toPorts:
+      - port: "80"
+        protocol: TCP

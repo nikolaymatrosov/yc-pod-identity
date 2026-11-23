@@ -1,0 +1,52 @@
+# Тестовый бэкенд LRP: на любой путь отвечает "<имя пода> <IP источника>".
+# readiness: kubectl exec … -- touch /tmp/notready переводит под в NotReady без удаления.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lrp-spike
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lrp-backend
+  namespace: lrp-spike
+data:
+  default.conf: |
+    server {
+      listen 80;
+      default_type text/plain;
+      location / { return 200 "$hostname $remote_addr\n"; }
+    }
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: lrp-backend
+  namespace: lrp-spike
+spec:
+  selector:
+    matchLabels:
+      app: lrp-backend
+  template:
+    metadata:
+      labels:
+        app: lrp-backend
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "test ! -f /tmp/notready"]
+            periodSeconds: 2
+            failureThreshold: 1
+          volumeMounts:
+            - name: conf
+              mountPath: /etc/nginx/conf.d
+      volumes:
+        - name: conf
+          configMap:
+            name: lrp-backend
