@@ -65,13 +65,14 @@ WIF end-to-end без Go уже проверен вручную (`yc` + curl) в
 - Обмен RFC 8693 на `auth.yandex.cloud/oauth/token` отдаёт `{"access_token", "expires_in": 43200, "token_type"}` —
   уже формат GCE metadata.
 - Пара «SA + subject» связывается только с одним issuer: вторая федерация на тот же subject — `AlreadyExists`.
-  Федерацию `k8s` (audience `ycaud`), созданную на стенде через `yc`, в Terraform импортировать или удалить заранее.
+  Федерация `talos-ops-k8s` (audience `ycaud`), созданная на стенде через `yc`, живёт рядом с федерацией из
+  Terraform с тем же issuer: конфликт только при той же паре SA + subject.
 
-- [ ] `terraform/`: бакет + `yandex_storage_object` с JWKS (`content_type = "application/json"`),
+- [x] `terraform/`: бакет + `yandex_storage_object` с JWKS (`content_type = "application/json"`),
   `yandex_iam_workload_identity_oidc_federation` (`issuer`, `audiences`, `jwks_url`),
   `yandex_iam_workload_identity_federated_credential` (`external_subject_id` = `system:serviceaccount:<ns>:<sa>`),
-  тестовый YC SA с ролью.
-- [ ] Проверить федерацию из Terraform тем же обменом: `kubectl create token --audience <aud>` → curl на
+  тестовый YC SA с ролью. Привязки — map `workloads` (существующий или создаваемый YC SA, роли на каталог).
+- [x] Проверить федерацию из Terraform тем же обменом: `kubectl create token --audience <aud>` → curl на
   `auth.yandex.cloud/oauth/token` → IAM-токен → вызов YC API.
 
 ### Фаза 2 — прокси на Go
