@@ -33,7 +33,7 @@ RFC 8693 на `https://auth.yandex.cloud/oauth/token` → ответ в форм
   `status.podIP`. Под не найден или без аннотации — 404, токен не выдаём.
 - Кэш IAM-токенов в памяти по `(namespace, serviceaccount)`; `expires_in` — реальный остаток TTL
   (IAM-токен живёт 12 ч).
-- Deny-политика на `169.254.169.254` остаётся как страховка на случай падения прокси.
+- Deny-политика на `169.254.169.254` обязательна: LRP fail-open, пока на ноде нет готового пода прокси (фаза 0).
 - hostNetwork-поды (CSI, Talos) перехват не затрагивает — они видят настоящие метаданные.
 
 ## Фазы
@@ -49,16 +49,31 @@ RFC 8693 на `https://auth.yandex.cloud/oauth/token` → ответ в форм
 - [x] Поведение без готового бэкенда на ноде: fail-open или fail-closed. Если fail-open — deny-политика обязана закрывать дыру; проверить совместно.
 - [x] Порядок LRP и CiliumNetworkPolicy: перенаправленный трафик проходит к прокси при включённой deny-политике.
 
-### Фаза 1 — федерация: Terraform + ручной обмен
+### Фаза 1 — федерация в Terraform
 
-Доказать WIF end-to-end без единой строчки Go. Главный риск фазы: **issuer Talos-кластера должен
-быть доступен Yandex Cloud снаружи** (OIDC discovery + JWKS). Варианты: anonymous-auth RBAC на
-`/.well-known/openid-configuration` и `/openid/v1/jwks` за публичным LB, либо статический issuer в
-Object Storage + `service-account-issuer`/`jwks-uri` в конфиге Talos.
+WIF end-to-end без Go уже проверен вручную (`yc` + curl) в yc-talos: `secrets.md`, вариант 3, и `ops.md` §1.3.
+Осталось перенести эту настройку в Terraform.
 
-- [ ] `terraform/`: `yandex_iam_workload_identity_oidc_federation` (issuer, audience) + `yandex_iam_workload_identity_federated_credential` (external_subject_id = `system:serviceaccount:<ns>:<sa>`) + тестовый YC SA с ролью.
-- [ ] Опубликовать issuer кластера, зафиксировать выбранный вариант в `docs/issuer.md`.
-- [ ] Руками: `kubectl create token` с audience федерации → curl на `auth.yandex.cloud/oauth/token` → IAM-токен → вызов YC API. Записать рабочий запрос в доку.
+Что там выяснено:
+
+- **Публиковать issuer не нужно.** Федерации передаётся `jwks_url` — JWKS лежит в публичном бакете Object Storage,
+  к API-серверу IAM не ходит (6443 был открыт только для одного IP). Issuer остаётся `https://<IP>:6443` из
+  `KubeServiceAccountConfig.issuerURL`.
+- JWKS отдаётся с `Content-Type: application/json`, иначе IAM отвечает `Failed to fetch JWKS`.
+- Ключ подписи в Talos статический (`issuer.privateKey`): JWKS перезаливается только при его ротации.
+- Токен должен быть с audience федерации; с audience по умолчанию — `Jwt has no matching audience`.
+- Обмен RFC 8693 на `auth.yandex.cloud/oauth/token` отдаёт `{"access_token", "expires_in": 43200, "token_type"}` —
+  уже формат GCE metadata.
+- Пара «SA + subject» связывается только с одним issuer: вторая федерация на тот же subject — `AlreadyExists`.
+  Федерация `talos-ops-k8s` (audience `ycaud`), созданная на стенде через `yc`, живёт рядом с федерацией из
+  Terraform с тем же issuer: конфликт только при той же паре SA + subject.
+
+- [x] `terraform/`: бакет + `yandex_storage_object` с JWKS (`content_type = "application/json"`),
+  `yandex_iam_workload_identity_oidc_federation` (`issuer`, `audiences`, `jwks_url`),
+  `yandex_iam_workload_identity_federated_credential` (`external_subject_id` = `system:serviceaccount:<ns>:<sa>`),
+  тестовый YC SA с ролью. Привязки — map `workloads` (существующий или создаваемый YC SA, роли на каталог).
+- [x] Проверить федерацию из Terraform тем же обменом: `kubectl create token --audience <aud>` → curl на
+  `auth.yandex.cloud/oauth/token` → IAM-токен → вызов YC API.
 
 ### Фаза 2 — прокси на Go
 
@@ -102,6 +117,7 @@ Object Storage + `service-account-issuer`/`jwks-uri` в конфиге Talos.
 ## Риски
 
 - **Fail-open LRP** — подтверждён (пода прокси на ноде нет или он NotReady): запрос уходит в настоящие метаданные (`docs/lrp-spike.md`). Deny-политика — обязательная часть установки, не опция: без неё упавший прокси открывает user-data с CA-ключами.
-- **Публичность issuer** — без неё федерация не работает вовсе; решается в фазе 1 до любого кода.
+- **Публичность issuer** — снят: IAM берёт ключи по `jwks_url` из Object Storage. Остаётся операционное: при
+  ротации ключа подписи Talos перезалить JWKS, иначе обмен токенов перестанет работать.
 - **Прокси — доверенная точка выдачи токенов**: RBAC минимальный, `addressMatcherCIDRs` ограничивает LRP, токены только подам своей ноды.
 - Перехват работает только при socket LB (`kubeProxyReplacement: true`) — в кластере уже так.
