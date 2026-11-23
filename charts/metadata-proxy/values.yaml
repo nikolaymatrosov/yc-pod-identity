@@ -9,9 +9,6 @@ imagePullSecrets: []
 # Audience федерации (terraform output audience): с ней прокси запрашивает TokenRequest.
 audience: yc-pod-identity
 
-# Порт прокси (-listen) и бэкенд-порт LRP. Фронтенд — всегда 169.254.169.254:80.
-port: 8080
-
 # CiliumClusterwideNetworkPolicy: egressDeny на 169.254.169.254/32 для всех подов. LRP fail-open — без готового
 # прокси на ноде запрос уходит в настоящие метаданные ВМ. Выключать, только если в кластере есть своя такая политика.
 denyPolicy:
