@@ -1,4 +1,4 @@
-# Образ metadata-proxy: push в main -> :main и :sha-<short>, тег vX.Y.Z -> :X.Y.Z, PR -> только сборка.
+# Образ metadata-proxy: push в main -> :main и :sha-<short>, тег vX.Y.Z -> :X.Y.Z и :latest, PR -> только сборка.
 name: image
 
 on:

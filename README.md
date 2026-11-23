@@ -14,8 +14,9 @@ Metadata-прокси для self-hosted Kubernetes в Yandex Cloud (Talos + Cil
 и его ServiceAccount → TokenRequest с audience федерации → обмен RFC 8693 на `auth.yandex.cloud/oauth/token` →
 `{"access_token", "expires_in", "token_type": "Bearer"}`.
 
-Прокси отвечает только на `GET /computeMetadata/v1/instance/service-accounts/default/token` с заголовком
-`Metadata-Flavor: Google` и на `/healthz`; остальные пути — 404. Под, у SA которого нет аннотации, получает 404.
+Прокси отвечает только на `/computeMetadata/v1/instance/service-accounts/default/token` и `/healthz`; остальные
+пути — 404. Без заголовка `Metadata-Flavor: Google` или с `X-Forwarded-For` — 403 (как у GCE metadata, защита от
+SSRF). Под, у SA которого нет аннотации, получает 404.
 IAM-токен берётся из кэша, пока до его истечения больше 5 минут.
 
 ## Установка
@@ -33,7 +34,8 @@ localRedirectPolicies:
 ```
 
 ```bash
-helm upgrade cilium cilium/cilium -n kube-system --reuse-values -f spike/lrp/cilium-values.yaml
+CILIUM_VERSION=$(helm -n kube-system get metadata cilium -o json | jq -r .version)  # не обновить CNI заодно
+helm upgrade cilium cilium/cilium -n kube-system --version "$CILIUM_VERSION" --reuse-values -f spike/lrp/cilium-values.yaml
 # При rollOutCiliumPods: false новый конфиг подхватывается только после рестарта.
 kubectl -n kube-system rollout restart ds/cilium deploy/cilium-operator
 kubectl get crd ciliumlocalredirectpolicies.cilium.io
@@ -58,7 +60,8 @@ helm install metadata-proxy ./charts/metadata-proxy -n yc-pod-identity --create-
 kubectl -n yc-pod-identity rollout status ds/metadata-proxy
 ```
 
-Образ — `ghcr.io/nikolaymatrosov/yc-pod-identity`, тег по умолчанию — `appVersion` чарта. Для приватного пакета
+Образ — `ghcr.io/nikolaymatrosov/yc-pod-identity`, тег по умолчанию — `appVersion` чарта. Пока не запушен git-тег `v0.1.0`, существуют только `:main` и
+`:sha-<short>` — ставьте с `--set image.tag=main`. Для приватного пакета
 нужен pull secret:
 
 ```bash
@@ -104,3 +107,15 @@ hostNetwork-поды политика не выбирает — они видя�
 
 `denyPolicy.enabled=false` — только если такая политика в кластере уже есть. `helm uninstall` удаляет и LRP, и
 deny-политику: кластер возвращается в состояние до установки.
+
+Socket LB подменяет адрес назначения в `connect()`, поэтому NetworkPolicy видит `<IP пода прокси>:8080`, а не
+`169.254.169.254:80`. В namespace с default-deny egress клиентским подам нужен egress-allow к подам
+`app.kubernetes.io/name: metadata-proxy` в namespace релиза на TCP 8080; если в namespace релиза default-deny ingress,
+прокси нужен ingress-allow от клиентских подов на TCP 8080. Иначе — таймаут.
+
+## Безопасность
+
+RBAC не ограничивает audience для `create serviceaccounts/token`, поэтому чарт ставит ValidatingAdmissionPolicy: SA
+прокси может создавать только TokenRequest с `audiences == [audience]` (нужен Kubernetes ≥ 1.30, VAP v1). Остаточный
+радиус поражения при взломе прокси: токены любой SA с audience федерации (то есть любой федеративной SA в YC) и чтение
+всех спеков подов (list/watch pods).

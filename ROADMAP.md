@@ -87,7 +87,7 @@ WIF end-to-end без Go уже проверен вручную (`yc` + curl) в
 ### Фаза 3 — поставка: образ + Helm chart
 
 - [x] Образ: multi-stage Dockerfile, distroless/static, nonroot.
-- [x] `charts/metadata-proxy`: DaemonSet, ServiceAccount + RBAC (list/watch pods и serviceaccounts; create serviceaccounts/token), CiliumLocalRedirectPolicy, values (audience, порт). `federation_id` прокси не нужен. Аргументы: `-node-name=$(NODE_NAME)` из downward API, `-audience`, `-listen` (по умолчанию `:8080`, бэкенд-порт LRP).
+- [x] `charts/metadata-proxy`: DaemonSet, ServiceAccount + RBAC (list/watch pods и serviceaccounts; create serviceaccounts/token), CiliumLocalRedirectPolicy, values (audience), ValidatingAdmissionPolicy (TokenRequest только с audience федерации). `federation_id` прокси не нужен. Аргументы: `-node-name=$(NODE_NAME)` из downward API, `-audience`, `-listen` (`:8080`, бэкенд-порт LRP фиксирован).
 - [x] Документация установки: values Cilium (фаза 0) + chart + terraform outputs → values чарта.
 
 ### Фаза 4 — e2e на Talos-кластере
@@ -120,5 +120,5 @@ WIF end-to-end без Go уже проверен вручную (`yc` + curl) в
 - **Fail-open LRP** — подтверждён (пода прокси на ноде нет или он NotReady): запрос уходит в настоящие метаданные (`docs/lrp-spike.md`). Deny-политика — обязательная часть установки, не опция: без неё упавший прокси открывает user-data с CA-ключами.
 - **Публичность issuer** — снят: IAM берёт ключи по `jwks_url` из Object Storage. Остаётся операционное: при
   ротации ключа подписи Talos перезалить JWKS, иначе обмен токенов перестанет работать.
-- **Прокси — доверенная точка выдачи токенов**: RBAC минимальный, `addressMatcherCIDRs` ограничивает LRP, токены только подам своей ноды.
+- **Прокси — доверенная точка выдачи токенов**: RBAC `create serviceaccounts/token` на кластер не ограничен по audience — VAP чарта пропускает от SA прокси только TokenRequest с audience федерации; взлом прокси = токены любой SA с audience федерации (все федеративные SA в YC) и чтение всех спеков подов (list/watch pods), но не API кластера. `addressMatcherCIDRs` ограничивает LRP; токены только подам своей ноды (это обеспечивает код прокси, не RBAC).
 - Перехват работает только при socket LB (`kubeProxyReplacement: true`) — в кластере уже так.
