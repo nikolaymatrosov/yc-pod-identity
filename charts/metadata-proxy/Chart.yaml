@@ -1,0 +1,6 @@
+apiVersion: v2
+name: metadata-proxy
+description: IAM-токены Yandex Cloud для подов через Workload Identity Federation по адресу GCE metadata.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
