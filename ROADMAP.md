@@ -31,8 +31,9 @@ RFC 8693 на `https://auth.yandex.cloud/oauth/token` → ответ в форм
   (плюс health). Остальные пути — 404. Требуем заголовок `Metadata-Flavor: Google`.
 - Резолв пода: informer на поды своей ноды (fieldSelector `spec.nodeName`), индекс по
   `status.podIP`. Под не найден или без аннотации — 404, токен не выдаём.
-- Кэш IAM-токенов в памяти по `(namespace, serviceaccount)`; `expires_in` — реальный остаток TTL
-  (IAM-токен живёт 12 ч).
+- Кэш IAM-токенов в памяти по `(namespace, serviceaccount, id YC SA)`; `expires_in` — реальный остаток TTL
+  (IAM-токен живёт 12 ч). `yandex-cloud/go-sdk` опрашивает метаданные каждые ~50 с, поэтому и кэш, и чтение
+  SA через informer (без запроса к API на каждый вызов) обязательны.
 - Deny-политика на `169.254.169.254` обязательна: LRP fail-open, пока на ноде нет готового пода прокси (фаза 0).
 - hostNetwork-поды (CSI, Talos) перехват не затрагивает — они видят настоящие метаданные.
 
@@ -77,16 +78,16 @@ WIF end-to-end без Go уже проверен вручную (`yc` + curl) в
 
 ### Фаза 2 — прокси на Go
 
-- [ ] Скелет: `cmd/metadata-proxy`, `internal/` (server, resolver, exchange). Зависимости: client-go + stdlib, без фреймворков.
-- [ ] Резолвер: informer по подам ноды, индекс по podIP, чтение аннотации SA.
-- [ ] TokenRequest + обмен RFC 8693 + кэш токенов.
-- [ ] HTTP: token endpoint в формате GCE, проверка `Metadata-Flavor`, 404 на остальное, `/healthz`.
-- [ ] Unit-тесты: fake clientset + httptest (резолв по IP, под без аннотации, кэш-хит, протухший токен).
+- [x] Скелет: `cmd/metadata-proxy`, `internal/proxy` (resolver, exchange, server). Зависимости: client-go + stdlib, без фреймворков.
+- [x] Резолвер: informer по подам ноды, индекс по podIP, informer по SA кластера для чтения аннотации.
+- [x] TokenRequest + обмен RFC 8693 + кэш токенов.
+- [x] HTTP: token endpoint в формате GCE, проверка `Metadata-Flavor`, 404 на остальное, `/healthz`.
+- [x] Unit-тесты: fake clientset + httptest (резолв по IP, под без аннотации, кэш-хит, протухший токен).
 
 ### Фаза 3 — поставка: образ + Helm chart
 
 - [ ] Образ: multi-stage Dockerfile, distroless/static, nonroot.
-- [ ] `charts/metadata-proxy`: DaemonSet, ServiceAccount + RBAC (list/watch pods; get serviceaccounts; create serviceaccounts/token), CiliumLocalRedirectPolicy, values (federation_id, audience, порт).
+- [ ] `charts/metadata-proxy`: DaemonSet, ServiceAccount + RBAC (list/watch pods и serviceaccounts; create serviceaccounts/token), CiliumLocalRedirectPolicy, values (audience, порт). `federation_id` прокси не нужен. Аргументы: `-node-name=$(NODE_NAME)` из downward API, `-audience`, `-listen` (по умолчанию `:8080`, бэкенд-порт LRP).
 - [ ] Документация установки: values Cilium (фаза 0) + chart + terraform outputs → values чарта.
 
 ### Фаза 4 — e2e на Talos-кластере
@@ -101,8 +102,8 @@ WIF end-to-end без Go уже проверен вручную (`yc` + curl) в
 
 ### Фаза 5 — эксплуатация
 
-- [ ] Prometheus-метрики (запросы, ошибки обмена, размер кэша) + structured logs (slog).
-- [ ] Graceful shutdown, readiness с учётом синка informer-а.
+- [ ] Prometheus-метрики (запросы, ошибки обмена, размер кэша). Логи slog уже есть (фаза 2).
+- [ ] Graceful shutdown. Readiness частично закрыт в фазе 2: порт открывается только после синка informer-ов.
 
 ## Вне скоупа MVP — и зачем может пригодиться
 
