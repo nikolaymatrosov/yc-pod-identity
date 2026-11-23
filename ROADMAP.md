@@ -86,9 +86,9 @@ WIF end-to-end без Go уже проверен вручную (`yc` + curl) в
 
 ### Фаза 3 — поставка: образ + Helm chart
 
-- [ ] Образ: multi-stage Dockerfile, distroless/static, nonroot.
-- [ ] `charts/metadata-proxy`: DaemonSet, ServiceAccount + RBAC (list/watch pods и serviceaccounts; create serviceaccounts/token), CiliumLocalRedirectPolicy, values (audience, порт). `federation_id` прокси не нужен. Аргументы: `-node-name=$(NODE_NAME)` из downward API, `-audience`, `-listen` (по умолчанию `:8080`, бэкенд-порт LRP).
-- [ ] Документация установки: values Cilium (фаза 0) + chart + terraform outputs → values чарта.
+- [x] Образ: multi-stage Dockerfile, distroless/static, nonroot.
+- [x] `charts/metadata-proxy`: DaemonSet, ServiceAccount + RBAC (list/watch pods и serviceaccounts; create serviceaccounts/token), CiliumLocalRedirectPolicy, values (audience, порт). `federation_id` прокси не нужен. Аргументы: `-node-name=$(NODE_NAME)` из downward API, `-audience`, `-listen` (по умолчанию `:8080`, бэкенд-порт LRP).
+- [x] Документация установки: values Cilium (фаза 0) + chart + terraform outputs → values чарта.
 
 ### Фаза 4 — e2e на Talos-кластере
 
