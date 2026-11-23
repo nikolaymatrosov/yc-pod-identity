@@ -1,0 +1,34 @@
+# RBAC не ограничивает audience: без этой политики create serviceaccounts/token на кластер — это токен любой SA с
+# audience API-сервера, то есть захват кластера при взломе прокси. От SA прокси пропускаются только токены федерации.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ .Release.Name }}-token-audience
+  labels:
+    app.kubernetes.io/name: metadata-proxy
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["serviceaccounts/token"]
+  matchConditions:
+    - name: metadata-proxy
+      expression: 'request.userInfo.username == "system:serviceaccount:{{ .Release.Namespace }}:{{ .Release.Name }}"'
+  validations:
+    - expression: 'object.spec.audiences == [{{ .Values.audience | quote }}]'
+      message: metadata-proxy may only request tokens for the federation audience
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ .Release.Name }}-token-audience
+  labels:
+    app.kubernetes.io/name: metadata-proxy
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  policyName: {{ .Release.Name }}-token-audience
+  validationActions: [Deny]
