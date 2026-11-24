@@ -48,7 +48,7 @@ func run(nodeName, audience, listen string) error {
 	}
 	srv := &http.Server{
 		Addr:              listen,
-		Handler:           proxy.NewServer(resolver, proxy.NewExchanger(client, audience)),
+		Handler:           proxy.NewServer(resolver, proxy.NewExchanger(client, audience), proxy.HostPassthrough{}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	slog.Info("listening", "addr", listen, "node", nodeName)

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -21,6 +22,11 @@ import (
 )
 
 const testNode = "node-a"
+
+// testHostIP — cilium_host ноды в тестах: с него приходят запросы host namespace. Подов с этим IP в fixture нет.
+const testHostIP = "10.0.0.254"
+
+var testHostPaths = []string{"/latest/dynamic/instance-identity/document", "/computeMetadata/v1/instance/id"}
 
 func pod(name, ip, sa string, mutate ...func(*corev1.Pod)) *corev1.Pod {
 	p := &corev1.Pod{
@@ -47,6 +53,10 @@ type fixture struct {
 	resolver *Resolver
 	server   *Server
 	iamCalls atomic.Int32
+
+	upstream       *url.URL
+	upstreamCalls  atomic.Int32
+	upstreamHeader atomic.Pointer[http.Header]
 }
 
 // newFixture: поды и SA в namespace ns; IAM отвечает по audience (id YC SA):
@@ -98,13 +108,24 @@ func newFixture(t *testing.T) *fixture {
 	}))
 	t.Cleanup(iam.Close)
 
+	// Настоящие метаданные: отвечают "real <path>" и ставят свой Metadata-Flavor.
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.upstreamCalls.Add(1)
+		h := r.Header.Clone()
+		f.upstreamHeader.Store(&h)
+		w.Header().Set("Metadata-Flavor", "Google")
+		fmt.Fprintf(w, "real %s", r.URL.Path)
+	}))
+	t.Cleanup(up.Close)
+	f.upstream, _ = url.Parse(up.URL)
+
 	f.resolver = NewResolver(f.client, testNode)
 	if err := f.resolver.Start(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	ex := NewExchanger(f.client, "yc-pod-identity")
 	ex.tokenURL = iam.URL
-	f.server = NewServer(f.resolver, ex)
+	f.server = NewServer(f.resolver, ex, HostPassthrough{IP: testHostIP, Paths: testHostPaths, Upstream: f.upstream})
 	return f
 }
 
@@ -241,5 +262,75 @@ func TestHealthz(t *testing.T) {
 	}
 	if rec := f.do(httptest.NewRequest(http.MethodGet, "/computeMetadata/v1/instance/id", nil)); rec.Code != http.StatusNotFound {
 		t.Errorf("other path code = %d", rec.Code)
+	}
+}
+
+func hostRequest(method, target string) *http.Request {
+	req := httptest.NewRequest(method, target, nil)
+	req.RemoteAddr = testHostIP + ":40000"
+	return req
+}
+
+func TestHostPassthrough(t *testing.T) {
+	f := newFixture(t)
+	req := hostRequest(http.MethodGet, "/computeMetadata/v1/instance/id")
+	req.Header.Set("Metadata-Flavor", "Google")
+	req.Header.Set("X-Forwarded-For", "1.2.3.4")
+	rec := f.do(req)
+	if rec.Code != http.StatusOK || rec.Body.String() != "real /computeMetadata/v1/instance/id" {
+		t.Fatalf("code = %d, body %q", rec.Code, rec.Body)
+	}
+	if got := rec.Header().Values("Metadata-Flavor"); len(got) != 1 {
+		t.Errorf("response Metadata-Flavor = %q, want exactly one", got)
+	}
+	h := *f.upstreamHeader.Load()
+	if got := h.Get("Metadata-Flavor"); got != "Google" {
+		t.Errorf("upstream Metadata-Flavor = %q", got)
+	}
+	if got := h.Get("X-Forwarded-For"); got != "" {
+		t.Errorf("upstream X-Forwarded-For = %q", got)
+	}
+	if rec := f.do(hostRequest(http.MethodGet, "/healthz")); rec.Code != http.StatusOK {
+		t.Errorf("healthz from host: code = %d", rec.Code)
+	}
+}
+
+func TestHostPassthroughRejected(t *testing.T) {
+	f := newFixture(t)
+	hostToken := hostRequest(http.MethodGet, tokenPath)
+	hostToken.Header.Set("Metadata-Flavor", "Google")
+	fromPod := httptest.NewRequest(http.MethodGet, "/computeMetadata/v1/instance/id", nil)
+	fromPod.RemoteAddr = "10.0.0.1:40000"
+	for name, req := range map[string]*http.Request{
+		"user-data":    hostRequest(http.MethodGet, "/latest/user-data"),
+		"query":        hostRequest(http.MethodGet, "/computeMetadata/v1/instance/id?alt=json"),
+		"escaped path": hostRequest(http.MethodGet, "/computeMetadata/v1/instance/i%64"),
+		"POST":         hostRequest(http.MethodPost, "/computeMetadata/v1/instance/id"),
+		"token":        hostToken,
+		"pod IP":       fromPod,
+	} {
+		if rec := f.do(req); rec.Code != http.StatusNotFound {
+			t.Errorf("%s: code = %d", name, rec.Code)
+		}
+	}
+	if n := f.upstreamCalls.Load(); n != 0 {
+		t.Errorf("upstream calls = %d", n)
+	}
+}
+
+func TestHostPassthroughDisabled(t *testing.T) {
+	f := newFixture(t)
+	for name, host := range map[string]HostPassthrough{
+		"no paths": {IP: testHostIP, Upstream: f.upstream},
+		"no IP":    {Paths: testHostPaths, Upstream: f.upstream},
+	} {
+		rec := httptest.NewRecorder()
+		NewServer(f.resolver, nil, host).ServeHTTP(rec, hostRequest(http.MethodGet, "/computeMetadata/v1/instance/id"))
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s: code = %d", name, rec.Code)
+		}
+	}
+	if n := f.upstreamCalls.Load(); n != 0 {
+		t.Errorf("upstream calls = %d", n)
 	}
 }

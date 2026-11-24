@@ -7,6 +7,9 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"slices"
 	"sync"
 	"time"
 )
@@ -22,20 +25,55 @@ type cachedToken struct {
 	expiresAt time.Time
 }
 
+// HostPassthrough — пересылка запросов host namespace (hostNetwork-поды, процессы ноды) в настоящие метаданные ВМ.
+// Socket LB отдаёт прокси и их connect() к 169.254.169.254, с IP источника cilium_host своей ноды. Пустые IP или
+// Paths выключают пересылку.
+type HostPassthrough struct {
+	IP       string   // IP cilium_host своей ноды
+	Paths    []string // точные request-target: путь без query и без нестандартного экранирования
+	Upstream *url.URL // настоящие метаданные; connect() самого прокси LRP не перехватывает (skipRedirectFromBackend)
+}
+
 // Server отвечает на token endpoint GCE metadata IAM-токеном SA пода-клиента.
 type Server struct {
 	resolver  *Resolver
 	exchanger *Exchanger
+	host      HostPassthrough
+	upstream  http.Handler
 
 	mu    sync.Mutex
 	cache map[Identity]cachedToken
 }
 
-func NewServer(r *Resolver, e *Exchanger) *Server {
-	return &Server{resolver: r, exchanger: e, cache: map[Identity]cachedToken{}}
+func NewServer(r *Resolver, e *Exchanger, host HostPassthrough) *Server {
+	return &Server{
+		resolver:  r,
+		exchanger: e,
+		host:      host,
+		// Rewrite, в отличие от Director, не добавляет X-Forwarded-For и вычищает присланный клиентом.
+		upstream: &httputil.ReverseProxy{
+			Rewrite: func(pr *httputil.ProxyRequest) { pr.SetURL(host.Upstream) },
+			ModifyResponse: func(resp *http.Response) error {
+				slog.Info("host passthrough", "path", resp.Request.URL.Path, "status", resp.StatusCode)
+				return nil
+			},
+			ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+				slog.Error("host passthrough failed", "path", r.URL.Path, "err", err)
+				w.WriteHeader(http.StatusBadGateway)
+			},
+		},
+		cache: map[Identity]cachedToken{},
+	}
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Хост на пути из allowlist — в настоящие метаданные. Metadata-Flavor ответа ставят они: свой задвоил бы заголовок.
+	// RequestURI сравнивается целиком: query и нестандартное экранирование пути не проходят.
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if ip != "" && ip == s.host.IP && r.Method == http.MethodGet && slices.Contains(s.host.Paths, r.RequestURI) {
+		s.upstream.ServeHTTP(w, r)
+		return
+	}
 	w.Header().Set("Metadata-Flavor", "Google")
 	switch r.URL.Path {
 	case "/healthz":
