@@ -71,7 +71,7 @@ func run(ctx context.Context, nodeName, audience, listen, metricsListen string) 
 	// Без паузы и переключения readiness: при раскатке без surge пауза только задержит новый под, а после снятия
 	// бэкенда LRP запросы и так уходят в deny. Shutdown закрывает listener и ждёт текущие обмены.
 	slog.Info("shutting down")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second) // = таймаут HTTP-клиента обмена
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second) // как таймаут IAM-запроса обмена; в худшем случае Shutdown упрётся в дедлайн и выйдет с ошибкой
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)
 }

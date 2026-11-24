@@ -267,6 +267,7 @@ func exchangeCount(t *testing.T) uint64 {
 
 // Метрики глобальные и копятся между тестами, поэтому проверяется прирост, а не значение.
 func TestMetrics(t *testing.T) {
+	cacheEntries.Set(0) // gauge глобальный: без сброса проверка в конце прошла бы на значении от прошлых тестов
 	f := newFixture(t)
 	noFlavor := tokenRequest("10.0.0.1")
 	noFlavor.Header.Del("Metadata-Flavor")
