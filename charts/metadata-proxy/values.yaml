@@ -9,10 +9,24 @@ imagePullSecrets: []
 # Audience федерации (terraform output audience): с ней прокси запрашивает TokenRequest.
 audience: yc-pod-identity
 
-# CiliumClusterwideNetworkPolicy: egressDeny на 169.254.169.254/32 для всех подов. LRP fail-open — без готового
-# прокси на ноде запрос уходит в настоящие метаданные ВМ. Выключать, только если в кластере есть своя такая политика.
+# Запрет 169.254.169.254/32 для всех подов, кроме SA прокси при включённом hostPassthrough: CCNP для подов вне
+# namespace релиза и CNP в namespace релиза. LRP fail-open — без готового прокси на ноде запрос уходит в настоящие
+# метаданные ВМ. Выключать, только если в кластере есть своя такая политика; при hostPassthrough она должна
+# исключать SA прокси, иначе пересылка упрётся в deny.
 denyPolicy:
   enabled: true
+
+# Запросы host namespace (hostNetwork-поды, процессы ноды) к этим путям прокси пересылает в настоящие метаданные ВМ:
+# только GET, путь точно, без query. Остальное хост получает 404. Под прокси получает сетевой доступ к
+# 169.254.169.254:80 только для этих путей — L7-политика Cilium (нужен cilium-envoy).
+hostPassthrough:
+  enabled: true
+  paths:
+    - /latest/dynamic/instance-identity/document # CSI YC: ID ВМ, зона
+    - /latest/meta-data/hostname # CSI YC
+    - /computeMetadata/v1/instance/id
+    - /computeMetadata/v1/instance/zone
+    - /computeMetadata/v1/instance/hostname
 
 resources:
   requests:

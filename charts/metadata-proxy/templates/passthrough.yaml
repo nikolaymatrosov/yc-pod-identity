@@ -1,0 +1,34 @@
+{{- if .Values.hostPassthrough.enabled }}
+# Прокси пересылает запросы host namespace в настоящие метаданные. Envoy пропускает только GET путей allowlist —
+# держится и при взломанном коде прокси. Остальной egress прокси политика не трогает (enableDefaultDeny: false).
+# ponytail: другие порты 169.254.169.254 прокси тоже доступны — там ничего не слушает; закрыть egressDeny с
+# диапазонами портов, если появится.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-host-passthrough
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: metadata-proxy
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  endpointSelector:
+    matchLabels:
+      k8s:io.cilium.k8s.policy.serviceaccount: {{ .Release.Name }}
+  enableDefaultDeny:
+    egress: false
+    ingress: false
+  egress:
+    - toCIDR:
+        - 169.254.169.254/32
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+          rules:
+            http:
+              {{- range .Values.hostPassthrough.paths }}
+              - method: GET
+                path: {{ printf "^%s$" (regexQuoteMeta .) | quote }}
+              {{- end }}
+{{- end }}

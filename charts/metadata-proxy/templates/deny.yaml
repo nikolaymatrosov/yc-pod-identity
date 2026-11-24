@@ -1,8 +1,9 @@
 {{- if .Values.denyPolicy.enabled }}
 # LRP fail-open: без готового прокси на ноде запрос уходит в настоящие метаданные ВМ (токен ВМ, user-data).
-# enableDefaultDeny=false: политика только запрещает метаданные, остальной трафик не трогает.
-# hostNetwork-поды и процессы ноды политика не выбирает: пока прокси на ноде готов, LRP отдаёт их прокси (404),
-# без прокси — они видят настоящие метаданные.
+# enableDefaultDeny=false: политики только запрещают метаданные, остальной трафик не трогают.
+# Две политики, потому что в селекторе нет OR: «не (namespace релиза и SA прокси)». Исключение по SA, а не по меткам:
+# метку прокси может поставить любой под, SA прокси — только тот, кто создаёт поды в namespace релиза.
+# hostNetwork-поды и процессы ноды политики не выбирают: без прокси на ноде они видят настоящие метаданные.
 apiVersion: cilium.io/v2
 kind: CiliumClusterwideNetworkPolicy
 metadata:
@@ -11,7 +12,36 @@ metadata:
     app.kubernetes.io/name: metadata-proxy
     app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
+  endpointSelector:
+    matchExpressions:
+      - key: k8s:io.kubernetes.pod.namespace
+        operator: NotIn
+        values: [{{ .Release.Namespace }}]
+  enableDefaultDeny:
+    egress: false
+    ingress: false
+  egressDeny:
+    - toCIDR:
+        - 169.254.169.254/32
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-deny-cloud-metadata
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: metadata-proxy
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  {{- if .Values.hostPassthrough.enabled }}
+  endpointSelector:
+    matchExpressions:
+      - key: k8s:io.cilium.k8s.policy.serviceaccount
+        operator: NotIn
+        values: [{{ .Release.Name }}]
+  {{- else }}
   endpointSelector: {}
+  {{- end }}
   enableDefaultDeny:
     egress: false
     ingress: false
