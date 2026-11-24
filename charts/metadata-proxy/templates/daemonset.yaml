@@ -11,7 +11,7 @@ spec:
     matchLabels:
       app.kubernetes.io/name: metadata-proxy
       app.kubernetes.io/instance: {{ .Release.Name }}
-  # updateStrategy по умолчанию (maxUnavailable: 1, без surge): при раскатке на ноде ~10 с нет бэкенда, LRP fail-open,
+  # updateStrategy по умолчанию (maxUnavailable: 1, без surge): при раскатке на ноде ~3 с нет бэкенда, LRP fail-open,
   # запросы ловит deny. С maxSurge: 1 окна нет, но при выключении ноды контроллер без backoff пересоздаёт поды,
   # которые kubelet отклоняет (NodeShutdown): в e2e — 110 подов за 5 с при reboot ноды, 60 остались висеть в API.
   template:
