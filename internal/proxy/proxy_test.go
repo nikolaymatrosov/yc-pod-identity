@@ -209,16 +209,46 @@ func TestAnnotationRemoved(t *testing.T) {
 	if _, err := f.client.CoreV1().ServiceAccounts("ns").Update(t.Context(), serviceAccount("app", ""), metav1.UpdateOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
-		if _, ok := f.resolver.Resolve("10.0.0.1"); !ok {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("informer did not see the annotation removal")
-		}
-	}
+	eventually(t, "annotation removal", func() bool {
+		_, ok := f.resolver.Resolve(t.Context(), "10.0.0.1")
+		return !ok
+	})
 	if rec := f.do(tokenRequest("10.0.0.1")); rec.Code != http.StatusNotFound {
 		t.Errorf("code = %d, want 404 after annotation removal", rec.Code)
+	}
+}
+
+// #20: контейнер нового пода делает запрос раньше, чем его status.podIPs доходит до informer.
+func TestPodIPArrivesAfterRequest(t *testing.T) {
+	f := newFixture(t)
+	p := pod("new", "10.0.0.7", "app")
+	p.Status = corev1.PodStatus{Phase: corev1.PodPending}
+	if _, err := f.client.CoreV1().Pods("ns").Create(t.Context(), p, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "pod without IP", func() bool {
+		_, ok, _ := f.resolver.pods.GetIndexer().GetByKey("ns/new")
+		return ok
+	})
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		p.Status = corev1.PodStatus{Phase: corev1.PodRunning, PodIPs: []corev1.PodIP{{IP: "10.0.0.7"}}}
+		if _, err := f.client.CoreV1().Pods("ns").UpdateStatus(t.Context(), p, metav1.UpdateOptions{}); err != nil {
+			t.Error(err)
+		}
+	}()
+	if rec := f.do(tokenRequest("10.0.0.7")); rec.Code != http.StatusOK {
+		t.Errorf("code = %d, body %q", rec.Code, rec.Body)
+	}
+}
+
+// eventually ждёт cond до 5 с: informer видит изменения в fake clientset асинхронно.
+func eventually(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); !cond(); time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("informer did not see %s", what)
+		}
 	}
 }
 

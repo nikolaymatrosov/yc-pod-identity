@@ -84,7 +84,7 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) string {
 		return "forbidden"
 	}
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
-	id, ok := s.resolver.Resolve(ip)
+	id, ok := s.resolver.Resolve(r.Context(), ip)
 	if !ok {
 		slog.Info("no identity for client", "ip", ip)
 		http.NotFound(w, r)

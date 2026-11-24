@@ -30,7 +30,8 @@ RFC 8693 на `https://auth.yandex.cloud/oauth/token` → ответ в форм
 - MVP отвечает **только** на `/computeMetadata/v1/instance/service-accounts/default/token`
   (плюс health). Остальные пути — 404. Требуем заголовок `Metadata-Flavor: Google`.
 - Резолв пода: informer на поды своей ноды (fieldSelector `spec.nodeName`), индекс по
-  `status.podIP`. Под не найден или без аннотации — 404, токен не выдаём.
+  `status.podIP`. Под не найден или без аннотации — 404, токен не выдаём. IP нового пода informer видит позже
+  первого запроса контейнера (~1 с): пока на ноде есть под без IP, промах по индексу ждёт до 3 с (#20).
 - Кэш IAM-токенов в памяти по `(namespace, serviceaccount, id YC SA)`; `expires_in` — реальный остаток TTL
   (IAM-токен живёт 12 ч). `yandex-cloud/go-sdk` опрашивает метаданные каждые ~50 с, поэтому и кэш, и чтение
   SA через informer (без запроса к API на каждый вызов) обязательны.
