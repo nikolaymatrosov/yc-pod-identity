@@ -29,15 +29,15 @@ IAM-токен берётся из кэша, пока до его истечен
 Нужны socket LB (`kubeProxyReplacement: true`) и Local Redirect Policy для адреса метаданных —
 [spike/lrp/cilium-values.yaml](spike/lrp/cilium-values.yaml):
 
-Для пересылки запросов host namespace нужны L7 proxy Cilium (`l7Proxy: true` — умолчание, cilium-envoy) и ядро
-≥ 5.12 (`skipRedirectFromBackend`).
-
 ```yaml
 localRedirectPolicies:
   enabled: true
   addressMatcherCIDRs:
     - 169.254.169.254/32
 ```
+
+Для пересылки запросов host namespace нужны L7 proxy Cilium (`l7Proxy: true` — умолчание, cilium-envoy) и ядро
+≥ 5.12 (`skipRedirectFromBackend`).
 
 ```bash
 CILIUM_VERSION=$(helm -n kube-system get metadata cilium -o json | jq -r .version)  # не обновить CNI заодно
@@ -119,7 +119,7 @@ LRP fail-open: пока на ноде нет готового пода прок�
 `169.254.169.254` уходят в настоящие метаданные ВМ — к токену SA ВМ и user-data (у Talos там конфиг с CA-ключами).
 Поэтому чарт по умолчанию ставит `egressDeny` на `169.254.169.254/32` для всех подов, кроме SA прокси: CCNP для
 подов вне namespace релиза и CNP в namespace релиза. Исключение по SA, а не по меткам: метку прокси может поставить
-любой под. Перенаправленный трафик она не блокирует: socket LB подменяет адрес назначения ещё в `connect()`.
+любой под. Перенаправленный трафик эти политики не блокируют: socket LB подменяет адрес назначения ещё в `connect()`.
 
 DaemonSet раскатывается без surge (`maxUnavailable: 1`): при `helm upgrade` на каждой ноде ~10 с нет прокси, и
 запросы подов упираются в deny (таймаут). `yandex-cloud/go-sdk` это переживает на закэшированном токене. Surge
@@ -128,7 +128,7 @@ backoff — в e2e 110 подов за 5 с.
 
 `denyPolicy.enabled=false` — только если такая политика в кластере уже есть; при `hostPassthrough` она должна
 исключать SA прокси (`k8s:io.cilium.k8s.policy.serviceaccount`), иначе пересылка упрётся в deny. `helm uninstall`
-удаляет и LRP, и deny-политику: кластер возвращается в состояние до установки.
+удаляет и LRP, и deny-политики: кластер возвращается в состояние до установки.
 
 Socket LB подменяет адрес назначения в `connect()`, поэтому NetworkPolicy видит `<IP пода прокси>:8080`, а не
 `169.254.169.254:80`. В namespace с default-deny egress клиентским подам нужен egress-allow к подам
