@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -241,5 +243,65 @@ func TestHealthz(t *testing.T) {
 	}
 	if rec := f.do(httptest.NewRequest(http.MethodGet, "/computeMetadata/v1/instance/id", nil)); rec.Code != http.StatusNotFound {
 		t.Errorf("other path code = %d", rec.Code)
+	}
+}
+
+// requestCounts — текущие значения requests_total по всем result.
+func requestCounts() map[string]float64 {
+	m := map[string]float64{}
+	for _, r := range results {
+		m[r] = testutil.ToFloat64(requests.WithLabelValues(r))
+	}
+	return m
+}
+
+// exchangeCount — число наблюдений гистограммы длительности обмена.
+func exchangeCount(t *testing.T) uint64 {
+	t.Helper()
+	var m dto.Metric
+	if err := exchangeDuration.Write(&m); err != nil {
+		t.Fatal(err)
+	}
+	return m.GetHistogram().GetSampleCount()
+}
+
+// Метрики глобальные и копятся между тестами, поэтому проверяется прирост, а не значение.
+func TestMetrics(t *testing.T) {
+	f := newFixture(t)
+	noFlavor := tokenRequest("10.0.0.1")
+	noFlavor.Header.Del("Metadata-Flavor")
+	for _, c := range []struct {
+		name      string
+		req       *http.Request
+		result    string // "" — ни один result не растёт
+		exchanges uint64
+	}{
+		{"first request", tokenRequest("10.0.0.1"), "exchanged", 1},
+		{"second request", tokenRequest("10.0.0.1"), "cached", 0},
+		{"IAM error", tokenRequest("10.0.0.6"), "exchange_error", 1},
+		{"unknown IP", tokenRequest("10.0.0.99"), "no_identity", 0},
+		{"no Metadata-Flavor", noFlavor, "forbidden", 0},
+		{"other path", httptest.NewRequest(http.MethodGet, "/computeMetadata/v1/instance/id", nil), "not_found", 0},
+		{"healthz", httptest.NewRequest(http.MethodGet, "/healthz", nil), "", 0},
+	} {
+		before, exBefore := requestCounts(), exchangeCount(t)
+		f.do(c.req)
+		after := requestCounts()
+		for _, r := range results {
+			want := before[r]
+			if r == c.result {
+				want++
+			}
+			if after[r] != want {
+				t.Errorf("%s: requests_total{result=%q} = %v, want %v", c.name, r, after[r], want)
+			}
+		}
+		if got := exchangeCount(t) - exBefore; got != c.exchanges {
+			t.Errorf("%s: exchanges observed = %d, want %d", c.name, got, c.exchanges)
+		}
+	}
+	// В кэше только sa-app: ошибка обмена не кэшируется.
+	if got := testutil.ToFloat64(cacheEntries); got != 1 {
+		t.Errorf("cache entries = %v, want 1", got)
 	}
 }
