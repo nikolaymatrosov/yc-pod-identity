@@ -3,6 +3,7 @@
 # enableDefaultDeny=false: политики только запрещают метаданные, остальной трафик не трогают.
 # Две политики, потому что в селекторе нет OR: «не (namespace релиза и SA прокси)». Исключение по SA, а не по меткам:
 # метку прокси может поставить любой под, SA прокси — только тот, кто создаёт поды в namespace релиза.
+# SA прокси исключается, только если включён hostPassthrough (иначе deny режет и connect() самого прокси).
 # hostNetwork-поды и процессы ноды политики не выбирают: без прокси на ноде они видят настоящие метаданные.
 apiVersion: cilium.io/v2
 kind: CiliumClusterwideNetworkPolicy
@@ -16,7 +17,7 @@ spec:
     matchExpressions:
       - key: k8s:io.kubernetes.pod.namespace
         operator: NotIn
-        values: [{{ .Release.Namespace }}]
+        values: [{{ .Release.Namespace | quote }}]
   enableDefaultDeny:
     egress: false
     ingress: false
@@ -38,7 +39,7 @@ spec:
     matchExpressions:
       - key: k8s:io.cilium.k8s.policy.serviceaccount
         operator: NotIn
-        values: [{{ .Release.Name }}]
+        values: [{{ .Release.Name | quote }}]
   {{- else }}
   endpointSelector: {}
   {{- end }}

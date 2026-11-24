@@ -16,11 +16,24 @@ audience: yc-pod-identity
 denyPolicy:
   enabled: true
 
-# Запросы host namespace (hostNetwork-поды, процессы ноды) к этим путям прокси пересылает в настоящие метаданные ВМ:
-# только GET, путь точно, без query. Остальное хост получает 404. Под прокси получает сетевой доступ к
-# 169.254.169.254:80 только для этих путей — L7-политика Cilium (нужен cilium-envoy).
+# Пересылка запросов host namespace. Запросы из host namespace (hostNetwork-поды, процессы ноды) к путям из paths прокси
+# пересылает в настоящие метаданные ВМ: только GET, путь точно, без query. Остальное хост получает 404. Пока выключено,
+# хост получает 404 на всё (CSI YC ломается, если его node-под перезапустился при готовом прокси).
+#
+# Цена: под прокси получает plain L4 доступ к 169.254.169.254:80 — ко ВСЕМ метаданным, включая user-data. Список
+# paths соблюдает только код прокси. Скомпрометированный прокси, а также любой с правами pods/exec,
+# pods/ephemeralcontainers или создания подов в namespace релиза читает все метаданные ВМ.
+#
+# Включать безопасно, только если в user-data нет приватных ключей CA: конфиг control plane Talos доставляется через
+# maintenance mode (talosctl apply-config --insecure --cert-fingerprint …) либо user-data удаляется после старта.
+#
+# Даже тогда скомпрометированный прокси получает токены присоединения воркеров из user-data воркеров (machine.token,
+# cluster.token, discovery clusterSecret — хватит, чтобы подключить чужую ноду, но это не cluster-admin) и токен
+# сервисного аккаунта ВМ на ВМ, где он есть.
+#
+# L7-фильтр (Envoy) здесь невозможен: upstream-соединение Envoy из host netns снова перехватывает LRP (Cilium 1.20).
 hostPassthrough:
-  enabled: true
+  enabled: false
   paths:
     - /latest/dynamic/instance-identity/document # CSI YC: ID ВМ, зона
     - /latest/meta-data/hostname # CSI YC

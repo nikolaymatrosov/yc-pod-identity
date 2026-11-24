@@ -1,6 +1,6 @@
 # Перехват 169.254.169.254:80 подов и host namespace в прокси на их ноде. Порт бэкенда должен совпадать с -listen
 # прокси (8080 в daemonset.yaml). skipRedirectFromBackend: connect() самого прокси идёт в настоящие метаданные
-# (пересылка запросов хоста; без hostPassthrough его режет deny), иначе — петля в себя. Стоит всегда: спека LRP
+# (пересылка запросов хоста при hostPassthrough), иначе — петля в себя. Без hostPassthrough connect() прокси режет deny. Стоит всегда: спека LRP
 # неизменяема (redirectFrontend, skipRedirectFromBackend), правка = удалить LRP, создать и пересоздать поды прокси.
 apiVersion: cilium.io/v2
 kind: CiliumLocalRedirectPolicy

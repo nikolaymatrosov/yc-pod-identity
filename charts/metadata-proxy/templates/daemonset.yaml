@@ -1,3 +1,4 @@
+{{- if and .Values.hostPassthrough.enabled (empty .Values.hostPassthrough.paths) }}{{ fail "hostPassthrough.paths is empty: set hostPassthrough.enabled=false" }}{{- end }}
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
