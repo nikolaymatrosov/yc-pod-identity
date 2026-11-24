@@ -119,10 +119,12 @@ Socket LB подменяет адрес назначения в `connect()`, п�
 
 ## hostNetwork
 
-При socket LB (`kubeProxyReplacement: true`) LRP перехватывает `connect()` и в host namespace: hostNetwork-поды и
-процессы ноды попадают в прокси и получают 404 — ни токена, ни настоящих метаданных ВМ. Штатного способа исключить
-host namespace из LRP в Cilium 1.20 нет. Всё, что на hostNetwork читает метаданные, с прокси не работает: например,
-CSI-драйвер Yandex Cloud (ID ВМ и зона). Passthrough для host namespace —
+При socket LB (`kubeProxyReplacement: true`) LRP перехватывает `connect()` и в host namespace. Пока прокси на ноде
+готов, hostNetwork-поды и процессы ноды попадают в него и получают 404 — ни токена, ни метаданных ВМ. Без готового
+прокси (раскатка, OOM, старт ноды) LRP fail-open, а deny-политика host namespace не выбирает: они снова видят настоящие
+метаданные. Штатного способа исключить host namespace из LRP в Cilium 1.20 нет. Всё, что на hostNetwork читает
+метаданные, с прокси работает с перебоями: например, CSI-драйвер Yandex Cloud (ID ВМ и зона), пока прокси готов,
+получает 404. Passthrough для host namespace —
 [#14](https://github.com/nikolaymatrosov/yc-pod-identity/issues/14).
 
 ## Безопасность
@@ -130,4 +132,5 @@ CSI-драйвер Yandex Cloud (ID ВМ и зона). Passthrough для host n
 RBAC не ограничивает audience для `create serviceaccounts/token`, поэтому чарт ставит ValidatingAdmissionPolicy: SA
 прокси может создавать только TokenRequest с `audiences == [audience]` (нужен Kubernetes ≥ 1.30, VAP v1). Остаточный
 радиус поражения при взломе прокси: токены любой SA с audience федерации (то есть любой федеративной SA в YC) и чтение
-всех спеков подов (list/watch pods).
+всех спеков подов (list/watch pods). Прокси стоит и на пути метаданных host namespace (см. «hostNetwork»): взломанный
+прокси может отдавать процессам ноды и hostNetwork-подам произвольные ответы.

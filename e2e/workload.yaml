@@ -1,7 +1,7 @@
 # Нагрузка e2e (фаза 4). Порядок: метка yc-pod-identity-e2e=target на один воркер; kubectl apply -f этого файла;
-# kubectl annotate sa demo (id YC SA из terraform output service_account_ids); kubectl create configmap sdk-client
-# --from-file=e2e/sdk-client/ --from-literal=folder=<id каталога>. Deployment, а не голые Pod-ы: reboot Talos
-# завершает поды ноды (graceful shutdown), голые после этого не возвращаются.
+# kubectl -n wif-test annotate sa demo (id YC SA из terraform output service_account_ids);
+# kubectl -n wif-test create configmap sdk-client --from-file=e2e/sdk-client/ --from-literal=folder=<id каталога>.
+# Deployment, а не голые Pod-ы: reboot Talos завершает поды ноды (graceful shutdown), голые после этого не возвращаются.
 apiVersion: v1
 kind: Namespace
 metadata:
