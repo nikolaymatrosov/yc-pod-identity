@@ -57,20 +57,23 @@ terraform -chdir=terraform output service_account_ids   # "ns/sa" -> id YC SA
 ### 3. Чарт
 
 ```bash
-helm install metadata-proxy ./charts/metadata-proxy -n yc-pod-identity --create-namespace \
-  --set audience=$(terraform -chdir=terraform output -raw audience)
+helm install metadata-proxy oci://ghcr.io/nikolaymatrosov/charts/metadata-proxy --version 0.1.0 \
+  -n yc-pod-identity --create-namespace --set audience=$(terraform -chdir=terraform output -raw audience)
 kubectl -n yc-pod-identity rollout status ds/metadata-proxy
 ```
 
-Образ — `ghcr.io/nikolaymatrosov/yc-pod-identity`, тег по умолчанию — `appVersion` чарта. Пока не запушен git-тег `v0.1.0`, существуют только `:main` и
-`:sha-<short>` — ставьте с `--set image.tag=main`. Для приватного пакета
-нужен pull secret:
+Образ — `ghcr.io/nikolaymatrosov/yc-pod-identity`, тег по умолчанию — версия чарта. Релиз — git-тег `vX.Y.Z`: CI
+публикует образ `:X.Y.Z` (и `:latest`) и чарт той же версии. Сборки из main — `:main` и `:sha-<short>`; ставить их
+через `--set image.tag=sha-<short>`: `:main` на нодах при `pullPolicy: IfNotPresent` не обновится. Чарт из исходников
+— `./charts/metadata-proxy` вместо `oci://…`.
+
+Для приватного пакета (например, в форке) нужен pull secret:
 
 ```bash
 kubectl -n yc-pod-identity create secret docker-registry ghcr --docker-server=ghcr.io \
   --docker-username=<github-логин> --docker-password=<PAT с read:packages>
-helm upgrade metadata-proxy ./charts/metadata-proxy -n yc-pod-identity --reuse-values \
-  --set 'imagePullSecrets[0].name=ghcr'
+helm upgrade metadata-proxy oci://ghcr.io/nikolaymatrosov/charts/metadata-proxy --version 0.1.0 \
+  -n yc-pod-identity --reuse-values --set 'imagePullSecrets[0].name=ghcr'
 ```
 
 Остальные параметры — [charts/metadata-proxy/values.yaml](charts/metadata-proxy/values.yaml).

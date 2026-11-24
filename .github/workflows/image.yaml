@@ -1,4 +1,5 @@
 # Образ metadata-proxy: push в main -> :main и :sha-<short>, тег vX.Y.Z -> :X.Y.Z и :latest, PR -> только сборка.
+# Тег vX.Y.Z ещё публикует чарт oci://ghcr.io/<owner>/charts/metadata-proxy:X.Y.Z (version и appVersion — из тега).
 name: image
 
 on:
@@ -38,3 +39,14 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+      - name: Publish chart
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          v=${GITHUB_REF_NAME#v}
+          helm package charts/metadata-proxy --version "$v" --app-version "$v"
+          echo "$TOKEN" | helm registry login ghcr.io -u "$ACTOR" --password-stdin
+          helm push "metadata-proxy-$v.tgz" "oci://ghcr.io/$OWNER/charts"
