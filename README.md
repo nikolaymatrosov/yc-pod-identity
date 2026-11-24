@@ -122,7 +122,7 @@ LRP fail-open: пока на ноде нет готового пода прок�
 Поэтому чарт по умолчанию ставит `CiliumClusterwideNetworkPolicy` с `egressDeny` на `169.254.169.254/32` для всех
 подов. Перенаправленный трафик она не блокирует: socket LB подменяет адрес назначения ещё в `connect()`.
 
-DaemonSet раскатывается без surge (`maxUnavailable: 1`): при `helm upgrade` на каждой ноде ~10 с нет прокси, и
+DaemonSet раскатывается без surge (`maxUnavailable: 1`): при `helm upgrade` на каждой ноде ~3 с нет прокси, и
 запросы подов упираются в deny (таймаут). `yandex-cloud/go-sdk` это переживает на закэшированном токене. Surge
 (`maxSurge: 1`) убрал бы окно, но при выключении ноды контроллер DaemonSet пересоздаёт отклонённые kubelet поды без
 backoff — в e2e 110 подов за 5 с.
