@@ -14,6 +14,8 @@ Metadata-прокси для self-hosted Kubernetes в Yandex Cloud (Talos + Cil
 и его ServiceAccount → TokenRequest с audience федерации → обмен RFC 8693 на `auth.yandex.cloud/oauth/token` →
 `{"access_token", "expires_in", "token_type": "Bearer"}`.
 
+![Архитектура metadata-proxy](assets/metadata-proxy-arch.drawio.svg)
+
 Прокси отвечает только на `/computeMetadata/v1/instance/service-accounts/default/token` и `/healthz`; остальные
 пути — 404. Без заголовка `Metadata-Flavor: Google` или с `X-Forwarded-For` — 403 (как у GCE metadata, защита от
 SSRF). Под, у SA которого нет аннотации, получает 404.
