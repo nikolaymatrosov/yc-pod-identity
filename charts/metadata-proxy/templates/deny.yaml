@@ -1,0 +1,20 @@
+{{- if .Values.denyPolicy.enabled }}
+# LRP fail-open: без готового прокси на ноде запрос уходит в настоящие метаданные ВМ (токен ВМ, user-data).
+# enableDefaultDeny=false: политика только запрещает метаданные, остальной трафик не трогает.
+# hostNetwork-поды endpointSelector не выбирает — они видят настоящие метаданные.
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-deny-cloud-metadata
+  labels:
+    app.kubernetes.io/name: metadata-proxy
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  endpointSelector: {}
+  enableDefaultDeny:
+    egress: false
+    ingress: false
+  egressDeny:
+    - toCIDR:
+        - 169.254.169.254/32
+{{- end }}

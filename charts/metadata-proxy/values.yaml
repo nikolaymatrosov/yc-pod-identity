@@ -1,0 +1,26 @@
+image:
+  repository: ghcr.io/nikolaymatrosov/yc-pod-identity
+  tag: "" # пусто — appVersion чарта
+  pullPolicy: IfNotPresent
+
+# Для приватного пакета GHCR: [{name: <docker-registry secret>}]
+imagePullSecrets: []
+
+# Audience федерации (terraform output audience): с ней прокси запрашивает TokenRequest.
+audience: yc-pod-identity
+
+# CiliumClusterwideNetworkPolicy: egressDeny на 169.254.169.254/32 для всех подов. LRP fail-open — без готового
+# прокси на ноде запрос уходит в настоящие метаданные ВМ. Выключать, только если в кластере есть своя такая политика.
+denyPolicy:
+  enabled: true
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 128Mi
+
+# Прокси нужен на каждой ноде, где могут жить поды.
+tolerations:
+  - operator: Exists
