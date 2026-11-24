@@ -1,4 +1,5 @@
-{{- if .Values.podMonitor.enabled }}
+{{- /* Скобки: helm upgrade --reuse-values с релиза без podMonitor в values иначе падает на nil. */}}
+{{- if (.Values.podMonitor).enabled }}
 # Нужны CRD prometheus-operator. Порт metrics — не за LRP, поды его как 169.254.169.254 не видят.
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
