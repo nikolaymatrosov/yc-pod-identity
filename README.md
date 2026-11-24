@@ -99,6 +99,22 @@ kubectl -n wif-test run curl --rm -it --restart=Never --image=curlimages/curl \
 Ожидается `{"access_token":"…","expires_in":…,"token_type":"Bearer"}`. Ошибка обмена в IAM — 502 с текстом ошибки
 в теле (`invalid_client` — нет federated credential на пару SA + subject, `invalid_target` — не та audience).
 
+## Метрики
+
+Prometheus-метрики — на отдельном порту `metrics` (9090, `/metrics`), не на порту за LRP: поды обращаются к прокси как
+к `169.254.169.254`, и `/metrics` там видели бы все.
+
+| Метрика | Что |
+| --- | --- |
+| `metadata_proxy_requests_total{result}` | запросы по исходу: `cached`, `exchanged`, `forbidden`, `no_identity`, `exchange_error`, `not_found` (другие пути метаданных; `/healthz` не считается) |
+| `metadata_proxy_token_exchange_duration_seconds` | длительность обмена k8s-токена на IAM-токен, включая ошибки |
+| `metadata_proxy_token_cache_entries` | записей в кэше IAM-токенов |
+
+Плюс стандартные `go_*` и `process_*`. Меток с namespace и SA нет. Для prometheus-operator —
+`--set podMonitor.enabled=true`; если `podMonitorSelector` выбирает по метке —
+`--set podMonitor.labels.release=<релиз>`. Если в namespace релиза default-deny ingress, Prometheus нужен
+ingress-allow на TCP 9090.
+
 ## Deny-политика
 
 LRP fail-open: пока на ноде нет готового пода прокси (раскатка, OOM, нода только поднялась), запросы к
