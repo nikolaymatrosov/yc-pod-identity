@@ -1,7 +1,8 @@
 {{- if .Values.denyPolicy.enabled }}
 # LRP fail-open: без готового прокси на ноде запрос уходит в настоящие метаданные ВМ (токен ВМ, user-data).
 # enableDefaultDeny=false: политика только запрещает метаданные, остальной трафик не трогает.
-# hostNetwork-поды endpointSelector не выбирает — они видят настоящие метаданные.
+# hostNetwork-поды и процессы ноды политика не выбирает: пока прокси на ноде готов, LRP отдаёт их прокси (404),
+# без прокси — они видят настоящие метаданные.
 apiVersion: cilium.io/v2
 kind: CiliumClusterwideNetworkPolicy
 metadata:

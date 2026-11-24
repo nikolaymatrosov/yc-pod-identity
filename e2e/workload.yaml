@@ -1,0 +1,96 @@
+# Нагрузка e2e (фаза 4). Порядок: метка yc-pod-identity-e2e=target на один воркер; kubectl apply -f этого файла;
+# kubectl -n wif-test annotate sa demo (id YC SA из terraform output service_account_ids);
+# kubectl -n wif-test create configmap sdk-client --from-file=e2e/sdk-client/ --from-literal=folder=<id каталога>.
+# Deployment, а не голые Pod-ы: reboot Talos завершает поды ноды (graceful shutdown), голые после этого не возвращаются.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: wif-test
+  labels:
+    pod-security.kubernetes.io/enforce: privileged # hostNetwork-под в проверке 3
+---
+# Аннотация yandex.cloud/federated-yc-service-account-id ставится kubectl annotate из terraform output.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: demo
+  namespace: wif-test
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: noid
+  namespace: wif-test
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sdk-client
+  namespace: wif-test
+spec:
+  selector:
+    matchLabels:
+      app: sdk-client
+  template:
+    metadata:
+      labels:
+        app: sdk-client
+    spec:
+      serviceAccountName: demo
+      nodeSelector:
+        yc-pod-identity-e2e: target
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: sdk-client
+          image: golang:1.26
+          # Без YC_*-переменных: SDK сам идёт на 169.254.169.254. Модули качаются и компилируются при старте (1–2 мин).
+          command: ["sh", "-c", "cd /src && exec go run . -folder=$(cat folder)"]
+          volumeMounts:
+            - name: src
+              mountPath: /src
+          resources:
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 2Gi
+      volumes:
+        - name: src
+          configMap:
+            name: sdk-client
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: curl-loop
+  namespace: wif-test
+spec:
+  selector:
+    matchLabels:
+      app: curl-loop
+  template:
+    metadata:
+      labels:
+        app: curl-loop
+    spec:
+      serviceAccountName: demo
+      nodeSelector:
+        yc-pod-identity-e2e: target
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: curl
+          image: curlimages/curl
+          # Раз в секунду: время, HTTP-код (000 — таймаут), expires_in, первые 8 символов sha256 токена.
+          command:
+            - sh
+            - -c
+            - |
+              while true; do
+                code=$(curl -s -m 2 -o /tmp/body -w '%{http_code}' -H 'Metadata-Flavor: Google' \
+                  http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token)
+                exp=$(sed -n 's/.*"expires_in":\([0-9]*\).*/\1/p' /tmp/body)
+                tok=$(sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p' /tmp/body)
+                if [ -n "$tok" ]; then tok=$(printf %s "$tok" | sha256sum | cut -c1-8); else tok=-; fi
+                echo "$(date -u +%H:%M:%S) $code ${exp:--} $tok"
+                : > /tmp/body
+                sleep 1
+              done
