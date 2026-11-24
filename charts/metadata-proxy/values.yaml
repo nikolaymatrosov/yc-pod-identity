@@ -14,6 +14,12 @@ audience: yc-pod-identity
 denyPolicy:
   enabled: true
 
+# PodMonitor prometheus-operator на порт metrics (9090, /metrics). labels — например, release: <релиз
+# kube-prometheus-stack>, если его podMonitorSelector выбирает по этой метке.
+podMonitor:
+  enabled: false
+  labels: {}
+
 resources:
   requests:
     cpu: 10m
