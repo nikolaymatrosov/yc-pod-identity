@@ -103,7 +103,11 @@ LRP fail-open: пока на ноде нет готового пода прок�
 `169.254.169.254` уходят в настоящие метаданные ВМ — к токену SA ВМ и user-data (у Talos там конфиг с CA-ключами).
 Поэтому чарт по умолчанию ставит `CiliumClusterwideNetworkPolicy` с `egressDeny` на `169.254.169.254/32` для всех
 подов. Перенаправленный трафик она не блокирует: socket LB подменяет адрес назначения ещё в `connect()`.
-hostNetwork-поды политика не выбирает — они видят настоящие метаданные.
+
+DaemonSet раскатывается без surge (`maxUnavailable: 1`): при `helm upgrade` на каждой ноде ~10 с нет прокси, и
+запросы подов упираются в deny (таймаут). `yandex-cloud/go-sdk` это переживает на закэшированном токене. Surge
+(`maxSurge: 1`) убрал бы окно, но при выключении ноды контроллер DaemonSet пересоздаёт отклонённые kubelet поды без
+backoff — в e2e 110 подов за 5 с.
 
 `denyPolicy.enabled=false` — только если такая политика в кластере уже есть. `helm uninstall` удаляет и LRP, и
 deny-политику: кластер возвращается в состояние до установки.
@@ -112,6 +116,14 @@ Socket LB подменяет адрес назначения в `connect()`, п�
 `169.254.169.254:80`. В namespace с default-deny egress клиентским подам нужен egress-allow к подам
 `app.kubernetes.io/name: metadata-proxy` в namespace релиза на TCP 8080; если в namespace релиза default-deny ingress,
 прокси нужен ingress-allow от клиентских подов на TCP 8080. Иначе — таймаут.
+
+## hostNetwork
+
+При socket LB (`kubeProxyReplacement: true`) LRP перехватывает `connect()` и в host namespace: hostNetwork-поды и
+процессы ноды попадают в прокси и получают 404 — ни токена, ни настоящих метаданных ВМ. Штатного способа исключить
+host namespace из LRP в Cilium 1.20 нет. Всё, что на hostNetwork читает метаданные, с прокси не работает: например,
+CSI-драйвер Yandex Cloud (ID ВМ и зона). Passthrough для host namespace —
+[#14](https://github.com/nikolaymatrosov/yc-pod-identity/issues/14).
 
 ## Безопасность
 
