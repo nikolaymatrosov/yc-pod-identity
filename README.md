@@ -57,7 +57,7 @@ terraform -chdir=terraform output service_account_ids   # "ns/sa" -> id YC SA
 ### 3. Чарт
 
 ```bash
-helm install metadata-proxy oci://ghcr.io/nikolaymatrosov/charts/metadata-proxy --version 0.1.0 \
+helm install metadata-proxy oci://ghcr.io/nikolaymatrosov/charts/metadata-proxy --version 0.1.1 \
   -n yc-pod-identity --create-namespace --set audience=$(terraform -chdir=terraform output -raw audience)
 kubectl -n yc-pod-identity rollout status ds/metadata-proxy
 ```
@@ -72,7 +72,7 @@ kubectl -n yc-pod-identity rollout status ds/metadata-proxy
 ```bash
 kubectl -n yc-pod-identity create secret docker-registry ghcr --docker-server=ghcr.io \
   --docker-username=<github-логин> --docker-password=<PAT с read:packages>
-helm upgrade metadata-proxy oci://ghcr.io/nikolaymatrosov/charts/metadata-proxy --version 0.1.0 \
+helm upgrade metadata-proxy oci://ghcr.io/nikolaymatrosov/charts/metadata-proxy --version 0.1.1 \
   -n yc-pod-identity --reuse-values --set 'imagePullSecrets[0].name=ghcr'
 ```
 
