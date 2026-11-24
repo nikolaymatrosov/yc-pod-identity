@@ -20,8 +20,17 @@ const (
 	minValidity = 5 * time.Minute
 )
 
-// results — значения метки result у requests_total.
-var results = []string{"cached", "exchanged", "forbidden", "no_identity", "exchange_error", "not_found"}
+// Значения метки result у requests_total.
+const (
+	resultCached        = "cached"
+	resultExchanged     = "exchanged"
+	resultForbidden     = "forbidden"
+	resultNoIdentity    = "no_identity"
+	resultExchangeError = "exchange_error"
+	resultNotFound      = "not_found"
+)
+
+var results = []string{resultCached, resultExchanged, resultForbidden, resultNoIdentity, resultExchangeError, resultNotFound}
 
 var (
 	requests = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -71,7 +80,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case tokenPath:
 		requests.WithLabelValues(s.token(w, r)).Inc()
 	default:
-		requests.WithLabelValues("not_found").Inc()
+		requests.WithLabelValues(resultNotFound).Inc()
 		http.NotFound(w, r)
 	}
 }
@@ -81,21 +90,21 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) string {
 	// Как GCE metadata: без заголовка или через прокси (X-Forwarded-For) — отказ, защита от SSRF.
 	if r.Header.Get("Metadata-Flavor") != "Google" || r.Header.Get("X-Forwarded-For") != "" {
 		http.Error(w, "Metadata-Flavor: Google header required", http.StatusForbidden)
-		return "forbidden"
+		return resultForbidden
 	}
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 	id, ok := s.resolver.Resolve(r.Context(), ip)
 	if !ok {
 		slog.Info("no identity for client", "ip", ip)
 		http.NotFound(w, r)
-		return "no_identity"
+		return resultNoIdentity
 	}
 	t, exchanged, err := s.cachedToken(r.Context(), id)
 	if err != nil {
 		slog.Error("token exchange failed", "namespace", id.Namespace, "serviceAccount", id.ServiceAccount,
 			"ycServiceAccountID", id.YCServiceAccountID, "err", err)
 		http.Error(w, err.Error(), http.StatusBadGateway)
-		return "exchange_error"
+		return resultExchangeError
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
@@ -104,9 +113,9 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) string {
 		"token_type":   "Bearer",
 	})
 	if exchanged {
-		return "exchanged"
+		return resultExchanged
 	}
-	return "cached"
+	return resultCached
 }
 
 // cachedToken без дедупликации: параллельные промахи одного SA дают несколько обменов, все токены валидны.
